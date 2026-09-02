@@ -54,6 +54,11 @@ CounterStrikeSharpHelper::installCounterStrikeSharp () {
 		return 1
 	}
 	CounterStrikeSharpHelper::unpackZip "$url"
+
+	# See CounterStrikeSharpHelper::clearExecStack in functions/utils.sh - without
+	# this, Metamod fails to load the plugin on systems that refuse an executable
+	# stack, showing up as `<ERROR>` in `meta list` with no obvious cause.
+	CounterStrikeSharpHelper::clearExecStack "addons/counterstrikesharp/bin/linuxsteamrt64/counterstrikesharp.so"
 }
 
 # Set CSS_PUGSHARP=1 (alongside CSS_ENABLE=1) in the instance's server.conf

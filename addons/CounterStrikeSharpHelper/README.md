@@ -7,15 +7,16 @@ into a CS2 instance's game directory, following the steps in the official
 Optionally also installs [PugSharp](https://github.com/Lan2Play/PugSharp), a
 CounterStrikeSharp plugin for running pug/matchmaking-style servers.
 
-**Status: early-stage, unverified against a live CS2 server.** The download
-step (fetching the newest GitHub release of each project and unpacking them),
-the merged file layout, and the `gameinfo.gi` patch step were all tested
-directly (including a real bug found and fixed this way: an earlier version
-pointed at the wrong target directory - see git history). What has **not**
-been tested is actually launching a CS2 dedicated server with the result and
-confirming `meta list`/`css_plugins list` (in the server console) show
-everything loaded. Please verify this on your setup and report back if
-anything is off.
+**Status: early-stage.** First real test against a live CS2 server (Metamod
+loaded, but `meta list` showed CounterStrikeSharp as `<ERROR>`) turned up a
+real bug, now fixed: CounterStrikeSharp's `counterstrikesharp.so` ships with
+its ELF stack marked executable, which this system's dynamic linker refused
+("cannot enable executable stack as shared object requires: Invalid
+argument") - see "Known limitations" below for the fix and how it's now
+applied automatically. That fix has been verified to actually flip the ELF
+flag correctly, but a full server restart with the fixed file and a
+`meta list`/`css_plugins list` recheck is still pending - please confirm and
+report back.
 
 ## What it does
 
@@ -77,6 +78,22 @@ events - it does not reflect players connected outside of a PugSharp match.
 
 ## Known limitations / not handled
 
+- **CounterStrikeSharp's executable-stack flag**: `counterstrikesharp.so`
+  ships with its ELF `PT_GNU_STACK` header marked executable. Some systems'
+  dynamic linker refuses to honor this, causing Metamod to fail loading it
+  (`<ERROR>` in `meta list`, with
+  `cannot enable executable stack as shared object requires: Invalid argument`
+  in the server log - not shown by `meta list` itself). Root cause unclear
+  (not an SELinux AVC denial on the system this was found on - `ausearch`/
+  `journalctl` showed nothing), but the fix is unambiguous: clear the flag.
+  This addon now does that automatically after every CounterStrikeSharp
+  download/extraction (`CounterStrikeSharpHelper::clearExecStack` in
+  `functions/utils.sh`, applied in `installCounterStrikeSharp`) using a
+  small in-place ELF program-header patch (needs only `od`/`dd`, not the
+  `execstack`/`patchelf` tools, which may not be installed). Verified to
+  correctly flip `RWE` to `RW` on the real downloaded binary; not yet
+  confirmed to resolve the actual `meta list` error end-to-end on a running
+  server (see Status above).
 - **Conflicts with `SourcemodHelper`**: both addons install their own copy of
   Metamod into the same `addons/metamod` path. Don't enable both on the same
   instance without reconciling this yourself.
