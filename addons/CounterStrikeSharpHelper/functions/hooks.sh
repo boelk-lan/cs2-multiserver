@@ -23,6 +23,7 @@ CounterStrikeSharpHelper::updateInstance () {
 		cd "$CSS_TMP_DIR"
 		CounterStrikeSharpHelper::installMetamod || return
 		CounterStrikeSharpHelper::installCounterStrikeSharp || return
+		CounterStrikeSharpHelper::installPugSharp || return
 	) || return
 
 	cp -r "$CSS_TMP_DIR"/* "$CSS_TARGET_DIR"
@@ -50,6 +51,23 @@ CounterStrikeSharpHelper::installCounterStrikeSharp () {
 	url="$(CounterStrikeSharpHelper::latestAssetUrl roflmuffin/CounterStrikeSharp 'counterstrikesharp-with-runtime-linux-.*\.zip$')"
 	[[ $url ]] || {
 		error <<< "Could not find a CounterStrikeSharp Linux release on GitHub."
+		return 1
+	}
+	CounterStrikeSharpHelper::unpackZip "$url"
+}
+
+# Set CSS_PUGSHARP=1 (alongside CSS_ENABLE=1) in the instance's server.conf
+# to also install https://github.com/Lan2Play/PugSharp, a CounterStrikeSharp
+# plugin for running pug/matchmaking-style servers. Uses the plain
+# "PugSharp_linux_*" release asset (not the "with_cssharp"-bundled ones),
+# since CounterStrikeSharp is already installed by this addon separately.
+CounterStrikeSharpHelper::installPugSharp () {
+	[[ $CSS_PUGSHARP ]] || return 0
+	echo "Fetching latest PugSharp (Linux) build ..."
+	local url
+	url="$(CounterStrikeSharpHelper::latestAssetUrl Lan2Play/PugSharp '^PugSharp_linux_[0-9].*\.zip$')"
+	[[ $url ]] || {
+		error <<< "Could not find a PugSharp Linux release on GitHub."
 		return 1
 	}
 	CounterStrikeSharpHelper::unpackZip "$url"
