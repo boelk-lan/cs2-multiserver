@@ -69,6 +69,19 @@ For Ubuntu 22.04 LTS, use the following command:
 sudo apt install lib32gcc-s1 lib32stdc++6 jq unzip inotify-tools
 ```
 
+For Fedora (including Fedora KDE), first enable the RPM Fusion and 32-bit repositories, then install the required packages:
+
+```
+sudo dnf install glibc.i686 libstdc++.i686 jq unzip inotify-tools
+```
+
+Fedora's SELinux policy and firewall are more restrictive than Ubuntu's by default. If the server fails to start or clients cannot connect, check `journalctl -xe` for SELinux denials (`sudo ausearch -m avc -ts recent` can help), and make sure to open the server's UDP/TCP ports (default 27015) in `firewalld`:
+
+```
+sudo firewall-cmd --add-port=27015/udp --add-port=27015/tcp --permanent
+sudo firewall-cmd --reload
+```
+
 If you run a different Linux distribution, the commands and package names may differ. If you need to install additional applications, the script will tell you which commands are unavailable.
 
 Also, you need a Steam account that owns the game to create a CS2 dedicated server. You will be asked your Steam login credentials during the server setup. Keep your Steam Guard authenticator ready.
