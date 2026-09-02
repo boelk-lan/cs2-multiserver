@@ -1,0 +1,10 @@
+#! /bin/bash
+## vim: noet:sw=0:sts=0:ts=4
+
+local ADDON_NAME="CounterStrikeSharp Helper"
+local ADDON_DESCRIPTION="Installs and updates Metamod:Source (2.x) and CounterStrikeSharp into a CS2 instance's game directory on every launch. See README.md in this addon's directory for setup instructions."
+local ADDON_WEBSITE="https://docs.cssharp.dev/docs/guides/getting-started.html"
+local ADDON_AUTHOR="boelk-lan"
+
+# This addon patches CS2 (Source 2)'s game/csgo directory and gameinfo.gi.
+local REQUIRES_APP="cs2"
