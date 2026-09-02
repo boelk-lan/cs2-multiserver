@@ -56,6 +56,25 @@ exact GitHub release tag.
    `meta list` to confirm Metamod and CounterStrikeSharp both loaded (and
    `css_plugins list` for PugSharp, if enabled).
 
+## Reporting match state to the boelk-lan frontend
+
+The frontend's instance view no longer polls the server console for the
+current map/players - PugSharp pushes that instead. To wire it up, point
+your PugSharp match config's `cvars.get5_remote_log_url` (loaded via
+`ps_loadconfig`/`ps_loadconfigfile`, see
+[pugsharp.lan2play.de](https://pugsharp.lan2play.de/)) at:
+
+```
+http://<backend-host>:3001/api/instances/<instance-name>/pugsharp-events
+```
+
+(`<instance-name>` is the plain instance name, e.g. `test`, or `base` for the
+base installation.) `backend-server` accepts PugSharp's Get5-API-compatible
+event stream there and keeps an in-memory snapshot of the current map, match
+ID, game state, and connected players (with team). This is match-scoped: the
+snapshot only has data while/after a PugSharp match has actually reported
+events - it does not reflect players connected outside of a PugSharp match.
+
 ## Known limitations / not handled
 
 - **Conflicts with `SourcemodHelper`**: both addons install their own copy of
