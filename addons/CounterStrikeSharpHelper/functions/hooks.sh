@@ -48,6 +48,8 @@ CounterStrikeSharpHelper::updateInstance () {
 		CounterStrikeSharpHelper::installCounterStrikeSharp || return
 		CounterStrikeSharpHelper::installPugSharp || return
 		CounterStrikeSharpHelper::installBoelkStatus || return
+		CounterStrikeSharpHelper::installK4Arenas || return
+		CounterStrikeSharpHelper::installBoelkArena || return
 	) || return
 
 	cp -r "$CSS_TMP_DIR"/* "$CSS_TARGET_DIR"
@@ -100,6 +102,47 @@ CounterStrikeSharpHelper::installPugSharp () {
 		return 1
 	}
 	CounterStrikeSharpHelper::unpackZip "$url"
+}
+
+# Set CSS_K4ARENAS=1 (alongside CSS_ENABLE=1) to install K4-Arenas
+# (https://github.com/K4ryuu/K4-Arenas), a multi-arena 1v1 plugin. Needs an arena map
+# (workshop, e.g. WORKSHOP_MAP_ID=3232857701). Runs without its MySQL database (weapon
+# preferences then last until a player leaves).
+CounterStrikeSharpHelper::installK4Arenas () {
+	[[ $CSS_K4ARENAS ]] || return 0
+	echo "Fetching K4-Arenas ..."
+	# Pinned: the project was archived on 2026-07-31, v2.0.8 is its last release
+	local file="$(CounterStrikeSharpHelper::downloadFile https://github.com/K4ryuu/K4-Arenas/releases/download/v2.0.8/K4-Arenas.zip)"
+	[[ -r $file ]] || {
+		error <<< "Could not download K4-Arenas."
+		return 1
+	}
+	# The zip has a K4-Arenas/{plugins,shared} root (plus __MACOSX junk), meant for addons/counterstrikesharp
+	unzip -q -o "$file" 'K4-Arenas/*' -d k4-unpack || return
+	mkdir -p addons/counterstrikesharp
+	cp -r k4-unpack/K4-Arenas/. addons/counterstrikesharp/
+	rm -rf k4-unpack
+}
+
+# Set CSS_BOELK_ARENA_URL (alongside CSS_K4ARENAS=1) to build and install the BoelkArena
+# plugin from this addon's BoelkArena/ directory: it POSTs every 1v1 arena duel (winner,
+# loser) to that URL, for the backend's ELO. Built against the K4-ArenaSharedApi.dll from
+# the K4-Arenas release unpacked just before. Like BoelkStatus, a failed build only skips it.
+CounterStrikeSharpHelper::installBoelkArena () {
+	[[ $CSS_K4ARENAS && $CSS_BOELK_ARENA_URL ]] || return 0
+	local dotnet="${DOTNET:-$(command -v dotnet || echo "$HOME/.dotnet/dotnet")}"
+	local src="$THIS_DIR/addons/CounterStrikeSharpHelper/BoelkArena"
+	local out="$CSS_HOME/boelkarena-build"
+	local api="$PWD/addons/counterstrikesharp/shared/K4-ArenaSharedApi/K4-ArenaSharedApi.dll"
+	echo "Building BoelkArena plugin ..."
+	"$dotnet" build "$src" -c Release -o "$out" -p:K4ApiPath="$api" --nologo -v quiet >/dev/null || {
+		warning <<< "Could not build the BoelkArena plugin with **$dotnet** - skipping it (no ELO)."
+		return 0
+	}
+	mkdir -p addons/counterstrikesharp/plugins/BoelkArena addons/counterstrikesharp/configs/plugins/BoelkArena
+	cp "$out"/BoelkArena.{dll,deps.json} addons/counterstrikesharp/plugins/BoelkArena/
+	jq -n --arg url "$CSS_BOELK_ARENA_URL" '{Url: $url, ConfigVersion: 1}' \
+		> addons/counterstrikesharp/configs/plugins/BoelkArena/BoelkArena.json
 }
 
 # Set CSS_BOELK_STATUS_URL (alongside CSS_ENABLE=1) to build and install the

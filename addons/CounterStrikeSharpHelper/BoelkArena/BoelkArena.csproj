@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Must match the .NET runtime CounterStrikeSharp ships (api/CounterStrikeSharp.API.runtimeconfig.json) -->
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Both provided at runtime (CounterStrikeSharp, and K4-Arenas' shared/ folder), so don't copy them -->
+    <PackageReference Include="CounterStrikeSharp.API" Version="1.0.379" ExcludeAssets="runtime" />
+    <!-- K4ApiPath: K4-ArenaSharedApi.dll from the K4-Arenas release, passed in by the addon when building -->
+    <Reference Include="K4-ArenaSharedApi">
+      <HintPath>$(K4ApiPath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
