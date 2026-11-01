@@ -13,6 +13,11 @@ CounterStrikeSharpHelper::updateInstance () {
 		return
 	}
 
+	# CounterStrikeSharp's .NET runtime crashes ("stack smashing detected", SIGSEGV) while the
+	# server process exits, after the game has already shut down cleanly. Harmless, but every stop
+	# would leave a ~300 MB core dump in /var/lib/systemd/coredump - so don't write one.
+	LAUNCH_CMD="prlimit --core=0 $LAUNCH_CMD"
+
 	warning <<-EOF
 		The CounterStrikeSharp helper addon is early-stage and UNTESTED against
 		a live CS2 server. It will overwrite Metamod/CounterStrikeSharp files in
@@ -24,6 +29,7 @@ CounterStrikeSharpHelper::updateInstance () {
 		CounterStrikeSharpHelper::installMetamod || return
 		CounterStrikeSharpHelper::installCounterStrikeSharp || return
 		CounterStrikeSharpHelper::installPugSharp || return
+		CounterStrikeSharpHelper::installBoelkStatus || return
 	) || return
 
 	cp -r "$CSS_TMP_DIR"/* "$CSS_TARGET_DIR"
@@ -76,6 +82,46 @@ CounterStrikeSharpHelper::installPugSharp () {
 		return 1
 	}
 	CounterStrikeSharpHelper::unpackZip "$url"
+}
+
+# Set CSS_BOELK_STATUS_URL (alongside CSS_ENABLE=1) to build and install the
+# BoelkStatus plugin from this addon's BoelkStatus/ directory. It POSTs the
+# player list to that URL on connect/disconnect/team switch and every 3 seconds,
+# and the final scoreboard at match end. Optional, written to its config:
+#   CSS_BOELK_EVERYONE_ADMIN=1      every player gets @css/root (e.g. for !rcon)
+#   CSS_BOELK_MAP_COMMANDS="..."    server commands run on every map start
+#   CSS_PUGSHARP_MATCH_CONFIG=path  PugSharp match config (JSON), copied to
+#                                   PugSharp/Config/boelk-match.json and loaded
+#                                   once after the server has started
+# Needs the .NET SDK matching CounterStrikeSharp's runtime (currently 10):
+# `dotnet` on PATH, in ~/.dotnet, or set DOTNET=/path/to/dotnet. If the build
+# fails the server still starts, just without the plugin.
+CounterStrikeSharpHelper::installBoelkStatus () {
+	[[ $CSS_BOELK_STATUS_URL ]] || return 0
+	local dotnet="${DOTNET:-$(command -v dotnet || echo "$HOME/.dotnet/dotnet")}"
+	local src="$THIS_DIR/addons/CounterStrikeSharpHelper/BoelkStatus"
+	local out="$CSS_HOME/boelkstatus-build"
+	echo "Building BoelkStatus plugin ..."
+	"$dotnet" build "$src" -c Release -o "$out" --nologo -v quiet >/dev/null || {
+		warning <<< "Could not build the BoelkStatus plugin with **$dotnet** - skipping it."
+		return 0
+	}
+	mkdir -p addons/counterstrikesharp/plugins/BoelkStatus addons/counterstrikesharp/configs/plugins/BoelkStatus
+	cp "$out"/BoelkStatus.{dll,deps.json} addons/counterstrikesharp/plugins/BoelkStatus/
+
+	local pugsharpFile=""
+	if [[ $CSS_PUGSHARP && $CSS_PUGSHARP_MATCH_CONFIG ]]; then
+		pugsharpFile="boelk-match.json"
+		mkdir -p PugSharp/Config
+		cp "$CSS_PUGSHARP_MATCH_CONFIG" "PugSharp/Config/$pugsharpFile"
+	fi
+	jq -n \
+		--arg url "$CSS_BOELK_STATUS_URL" \
+		--argjson admin "$([[ $CSS_BOELK_EVERYONE_ADMIN ]] && echo true || echo false)" \
+		--arg commands "$CSS_BOELK_MAP_COMMANDS" \
+		--arg pugsharp "$pugsharpFile" \
+		'{Url: $url, EveryoneAdmin: $admin, MapStartCommands: $commands, PugSharpConfigFile: $pugsharp, ConfigVersion: 1}' \
+		> addons/counterstrikesharp/configs/plugins/BoelkStatus/BoelkStatus.json
 }
 
 # CS2 (Source 2) does not auto-discover Metamod the way Source 1 games did -

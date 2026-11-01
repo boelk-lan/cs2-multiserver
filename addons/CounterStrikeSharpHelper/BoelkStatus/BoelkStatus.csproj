@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Must match the .NET runtime CounterStrikeSharp ships (api/CounterStrikeSharp.API.runtimeconfig.json) -->
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Provided by CounterStrikeSharp at runtime, so don't copy it into the build output -->
+    <PackageReference Include="CounterStrikeSharp.API" Version="1.0.379" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>
