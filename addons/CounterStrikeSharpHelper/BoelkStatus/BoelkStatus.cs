@@ -37,7 +37,7 @@ public class BoelkStatusConfig : BasePluginConfig
 public class BoelkStatusPlugin : BasePlugin, IPluginConfig<BoelkStatusConfig>
 {
     public override string ModuleName => "BoelkStatus";
-    public override string ModuleVersion => "0.5.0";
+    public override string ModuleVersion => "0.6.0";
     public override string ModuleDescription => "Reports players, results and a heartbeat to the boelk-lan backend";
 
     public BoelkStatusConfig Config { get; set; } = new();
@@ -200,20 +200,42 @@ public class BoelkStatusPlugin : BasePlugin, IPluginConfig<BoelkStatusConfig>
 
         var players = Utilities.GetPlayers()
             .Where(p => p is { IsValid: true, IsHLTV: false } && p.Slot != excludeSlot)
-            .Select(p => new
+            .Select(p =>
             {
-                steamId = p.SteamID.ToString(),
-                name = p.PlayerName,
-                team = p.Team.ToString(),
-                isBot = p.IsBot,
-                ping = p.Ping,
-                score = p.Score,
-                kills = p.ActionTrackingServices?.MatchStats.Kills ?? 0,
-                deaths = p.ActionTrackingServices?.MatchStats.Deaths ?? 0,
-                assists = p.ActionTrackingServices?.MatchStats.Assists ?? 0,
-                damage = p.ActionTrackingServices?.MatchStats.Damage ?? 0,
-                headshotKills = p.ActionTrackingServices?.MatchStats.HeadShotKills ?? 0,
-                mvps = p.MVPs,
+                // The game's own scoreboard stats for the whole match (reset by mp_restartgame)
+                var m = p.ActionTrackingServices?.MatchStats;
+                return new
+                {
+                    steamId = p.SteamID.ToString(),
+                    name = p.PlayerName,
+                    team = p.Team.ToString(),
+                    isBot = p.IsBot,
+                    ping = p.Ping,
+                    score = p.Score,
+                    mvps = p.MVPs,
+                    kills = m?.Kills ?? 0,
+                    deaths = m?.Deaths ?? 0,
+                    assists = m?.Assists ?? 0,
+                    damage = m?.Damage ?? 0,
+                    headshotKills = m?.HeadShotKills ?? 0,
+                    utilityDamage = m?.UtilityDamage ?? 0,
+                    enemiesFlashed = m?.EnemiesFlashed ?? 0,
+                    enemy2Ks = m?.Enemy2Ks ?? 0,
+                    enemy3Ks = m?.Enemy3Ks ?? 0,
+                    enemy4Ks = m?.Enemy4Ks ?? 0,
+                    enemy5Ks = m?.Enemy5Ks ?? 0,
+                    knifeKills = m?.EnemyKnifeKills ?? 0,
+                    taserKills = m?.EnemyTaserKills ?? 0,
+                    entryCount = m?.EntryCount ?? 0,
+                    entryWins = m?.EntryWins ?? 0,
+                    clutch1v1Count = m?.I1v1Count ?? 0,
+                    clutch1v1Wins = m?.I1v1Wins ?? 0,
+                    clutch1v2Count = m?.I1v2Count ?? 0,
+                    clutch1v2Wins = m?.I1v2Wins ?? 0,
+                    cashEarned = m?.CashEarned ?? 0,
+                    moneySaved = m?.MoneySaved ?? 0,
+                    objective = m?.Objective ?? 0,
+                };
             })
             .ToList();
         // cs_team_manager entities: TeamNum 2 = Terrorist, 3 = CounterTerrorist
@@ -224,7 +246,7 @@ public class BoelkStatusPlugin : BasePlugin, IPluginConfig<BoelkStatusConfig>
         // GamePhase 5 = GAMEPHASE_MATCH_ENDED
         var rules = Utilities.FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules").FirstOrDefault()?.GameRules;
         var phase = rules == null ? "unknown" : rules.WarmupPeriod ? "warmup" : rules.GamePhase == 5 ? "ended" : "live";
-        var body = new { @event = evt, map = Server.MapName, phase, players, teams };
+        var body = new { @event = evt, map = Server.MapName, phase, roundsPlayed = rules?.TotalRoundsPlayed ?? 0, players, teams };
         var url = Config.Url;
 
         Task.Run(async () =>
