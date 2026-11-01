@@ -2,7 +2,25 @@
 ## vim: noet:sw=0:sts=0:ts=4
 
 ::registerHook before~App::buildLaunchCommand CounterStrikeSharpHelper::initVars
+::registerHook after~App::buildLaunchCommand  CounterStrikeSharpHelper::shareWorkshop
 ::registerHook after~App::buildLaunchCommand  CounterStrikeSharpHelper::updateInstance
+
+# Workshop maps (host_workshop_map <id>) are downloaded by each server into its own
+# game/bin/linuxsteamrt64/steamapps/workshop - so every instance would download every map
+# again. Link that steamapps directory to one shared directory instead, for all instances
+# (not only CSS_ENABLE ones). Maps an instance already downloaded are moved over once.
+# ponytail: two servers downloading the same new map at the same moment share one manifest
+# (appworkshop_730.acf); fine at a LAN, per-instance manifests if that ever breaks.
+CounterStrikeSharpHelper::shareWorkshop () {
+	local shared="$USER_DIR/$APP/workshop/steamapps"
+	local link="$INSTANCE_DIR/game/bin/linuxsteamrt64/steamapps"
+	[[ -L $link ]] && return
+	mkdir -p "$shared"
+	if [[ -d $link ]]; then
+		cp -rn "$link"/. "$shared"/ && rm -rf "$link" || return
+	fi
+	ln -s "$shared" "$link"
+}
 
 # Set CSS_ENABLE=1 in the instance's server.conf (or MSM's environment) to opt
 # an instance into this addon. Leaving it unset is a no-op, same as SM_PLUGINS
