@@ -143,6 +143,13 @@ CounterStrikeSharpHelper::installBoelkArena () {
 	cp "$out"/BoelkArena.{dll,deps.json} addons/counterstrikesharp/plugins/BoelkArena/
 	jq -n --arg url "$CSS_BOELK_ARENA_URL" '{Url: $url, ConfigVersion: 1}' \
 		> addons/counterstrikesharp/configs/plugins/BoelkArena/BoelkArena.json
+
+	# BoelkArena sets the clan tag itself ("ARENA 1 | 1016"), so turn off K4-Arenas' own ("ARENA 1").
+	# Its config only exists after the first start; until then BoelkArena overwrites K4's tag right
+	# after each round start. (sed, not jq: the file starts with a // comment line.)
+	local k4cfg="$CSS_TARGET_DIR/addons/counterstrikesharp/configs/plugins/K4-Arenas/K4-Arenas.json"
+	[[ -f $k4cfg ]] && sed -i 's/"disable-clantags": false/"disable-clantags": true/' "$k4cfg"
+	return 0
 }
 
 # Set CSS_BOELK_STATUS_URL (alongside CSS_ENABLE=1) to build and install the
