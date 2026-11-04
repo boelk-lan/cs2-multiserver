@@ -126,16 +126,14 @@ CounterStrikeSharpHelper::installK4Arenas () {
 
 # Set CSS_BOELK_ARENA_URL (alongside CSS_K4ARENAS=1) to build and install the BoelkArena
 # plugin from this addon's BoelkArena/ directory: it POSTs every 1v1 arena duel (winner,
-# loser) to that URL, for the backend's ELO. Built against the K4-ArenaSharedApi.dll from
-# the K4-Arenas release unpacked just before. Like BoelkStatus, a failed build only skips it.
+# loser) to that URL, for the backend's ELO. Like BoelkStatus, a failed build only skips it.
 CounterStrikeSharpHelper::installBoelkArena () {
 	[[ $CSS_K4ARENAS && $CSS_BOELK_ARENA_URL ]] || return 0
 	local dotnet="${DOTNET:-$(command -v dotnet || echo "$HOME/.dotnet/dotnet")}"
 	local src="$THIS_DIR/addons/CounterStrikeSharpHelper/BoelkArena"
 	local out="$CSS_HOME/boelkarena-build"
-	local api="$PWD/addons/counterstrikesharp/shared/K4-ArenaSharedApi/K4-ArenaSharedApi.dll"
 	echo "Building BoelkArena plugin ..."
-	"$dotnet" build "$src" -c Release -o "$out" -p:K4ApiPath="$api" --nologo -v quiet >/dev/null || {
+	"$dotnet" build "$src" -c Release -o "$out" --nologo -v quiet >/dev/null || {
 		warning <<< "Could not build the BoelkArena plugin with **$dotnet** - skipping it (no ELO)."
 		return 0
 	}
@@ -144,11 +142,11 @@ CounterStrikeSharpHelper::installBoelkArena () {
 	jq -n --arg url "$CSS_BOELK_ARENA_URL" '{Url: $url, ConfigVersion: 1}' \
 		> addons/counterstrikesharp/configs/plugins/BoelkArena/BoelkArena.json
 
-	# BoelkArena sets the clan tag itself ("ARENA 1 | 1016"), so turn off K4-Arenas' own ("ARENA 1").
-	# Its config only exists after the first start; until then BoelkArena overwrites K4's tag right
-	# after each round start. (sed, not jq: the file starts with a // comment line.)
+	# BoelkArena appends the ELO to K4-Arenas' own clan tag ("ARENA 1 |"), so it must stay on.
+	# Older versions of this addon turned it off - turn it back on. (sed, not jq: the file starts
+	# with a // comment line.)
 	local k4cfg="$CSS_TARGET_DIR/addons/counterstrikesharp/configs/plugins/K4-Arenas/K4-Arenas.json"
-	[[ -f $k4cfg ]] && sed -i 's/"disable-clantags": false/"disable-clantags": true/' "$k4cfg"
+	[[ -f $k4cfg ]] && sed -i 's/"disable-clantags": true/"disable-clantags": false/' "$k4cfg"
 	return 0
 }
 

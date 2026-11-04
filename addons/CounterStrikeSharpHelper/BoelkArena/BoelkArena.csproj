@@ -8,13 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Both provided at runtime (CounterStrikeSharp, and K4-Arenas' shared/ folder), so don't copy them -->
+    <!-- Provided at runtime by CounterStrikeSharp, so don't copy it -->
     <PackageReference Include="CounterStrikeSharp.API" Version="1.0.379" ExcludeAssets="runtime" />
-    <!-- K4ApiPath: K4-ArenaSharedApi.dll from the K4-Arenas release, passed in by the addon when building -->
-    <Reference Include="K4-ArenaSharedApi">
-      <HintPath>$(K4ApiPath)</HintPath>
-      <Private>false</Private>
-    </Reference>
   </ItemGroup>
 
 </Project>
