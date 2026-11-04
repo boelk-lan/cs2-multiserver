@@ -48,7 +48,6 @@ CounterStrikeSharpHelper::updateInstance () {
 		CounterStrikeSharpHelper::installCounterStrikeSharp || return
 		CounterStrikeSharpHelper::installPugSharp || return
 		CounterStrikeSharpHelper::installBoelkStatus || return
-		CounterStrikeSharpHelper::installK4Arenas || return
 		CounterStrikeSharpHelper::installBoelkArena || return
 	) || return
 
@@ -104,49 +103,31 @@ CounterStrikeSharpHelper::installPugSharp () {
 	CounterStrikeSharpHelper::unpackZip "$url"
 }
 
-# Set CSS_K4ARENAS=1 (alongside CSS_ENABLE=1) to install K4-Arenas
-# (https://github.com/K4ryuu/K4-Arenas), a multi-arena 1v1 plugin. Needs an arena map
-# (workshop, e.g. WORKSHOP_MAP_ID=3232857701). Runs without its MySQL database (weapon
-# preferences then last until a player leaves).
-CounterStrikeSharpHelper::installK4Arenas () {
-	[[ $CSS_K4ARENAS ]] || return 0
-	echo "Fetching K4-Arenas ..."
-	# Pinned: the project was archived on 2026-07-31, v2.0.8 is its last release
-	local file="$(CounterStrikeSharpHelper::downloadFile https://github.com/K4ryuu/K4-Arenas/releases/download/v2.0.8/K4-Arenas.zip)"
-	[[ -r $file ]] || {
-		error <<< "Could not download K4-Arenas."
-		return 1
-	}
-	# The zip has a K4-Arenas/{plugins,shared} root (plus __MACOSX junk), meant for addons/counterstrikesharp
-	unzip -q -o "$file" 'K4-Arenas/*' -d k4-unpack || return
-	mkdir -p addons/counterstrikesharp
-	cp -r k4-unpack/K4-Arenas/. addons/counterstrikesharp/
-	rm -rf k4-unpack
-}
-
-# Set CSS_BOELK_ARENA_URL (alongside CSS_K4ARENAS=1) to build and install the BoelkArena
-# plugin from this addon's BoelkArena/ directory: it POSTs every 1v1 arena duel (winner,
-# loser) to that URL, for the backend's ELO. Like BoelkStatus, a failed build only skips it.
+# Set CSS_BOELK_ARENA_URL (alongside CSS_ENABLE=1) to build and install the BoelkArena plugin
+# from this addon's BoelkArena/ directory: continuous 1v1 arena duels on arena maps (am_*, e.g.
+# WORKSHOP_MAP_ID=3232857701), each duel POSTed to that URL for the backend's ELO. Like
+# BoelkStatus, a failed build only skips it. Replaces K4-Arenas, which older versions of this
+# addon installed - it is removed from the instance here.
 CounterStrikeSharpHelper::installBoelkArena () {
-	[[ $CSS_K4ARENAS && $CSS_BOELK_ARENA_URL ]] || return 0
+	[[ $CSS_BOELK_ARENA_URL ]] || return 0
 	local dotnet="${DOTNET:-$(command -v dotnet || echo "$HOME/.dotnet/dotnet")}"
 	local src="$THIS_DIR/addons/CounterStrikeSharpHelper/BoelkArena"
 	local out="$CSS_HOME/boelkarena-build"
 	echo "Building BoelkArena plugin ..."
 	"$dotnet" build "$src" -c Release -o "$out" --nologo -v quiet >/dev/null || {
-		warning <<< "Could not build the BoelkArena plugin with **$dotnet** - skipping it (no ELO)."
+		warning <<< "Could not build the BoelkArena plugin with **$dotnet** - skipping it (no arenas)."
 		return 0
 	}
 	mkdir -p addons/counterstrikesharp/plugins/BoelkArena addons/counterstrikesharp/configs/plugins/BoelkArena
 	cp "$out"/BoelkArena.{dll,deps.json} addons/counterstrikesharp/plugins/BoelkArena/
-	jq -n --arg url "$CSS_BOELK_ARENA_URL" '{Url: $url, ConfigVersion: 1}' \
-		> addons/counterstrikesharp/configs/plugins/BoelkArena/BoelkArena.json
 
-	# BoelkArena appends the ELO to K4-Arenas' own clan tag ("ARENA 1 |"), so it must stay on.
-	# Older versions of this addon turned it off - turn it back on. (sed, not jq: the file starts
-	# with a // comment line.)
-	local k4cfg="$CSS_TARGET_DIR/addons/counterstrikesharp/configs/plugins/K4-Arenas/K4-Arenas.json"
-	[[ -f $k4cfg ]] && sed -i 's/"disable-clantags": true/"disable-clantags": false/' "$k4cfg"
+	# Only Url comes from here; round types and server commands edited in the instance's config are kept.
+	# (grep: CounterStrikeSharp-written configs start with a // comment line, which jq can't parse.)
+	local cfg="addons/counterstrikesharp/configs/plugins/BoelkArena/BoelkArena.json"
+	{ grep -sv '^\s*//' "$CSS_TARGET_DIR/$cfg" || echo '{}'; } \
+		| jq --arg url "$CSS_BOELK_ARENA_URL" '.Url = $url | .ConfigVersion //= 1' > "$cfg"
+
+	rm -rf "$CSS_TARGET_DIR"/addons/counterstrikesharp/{plugins/K4-Arenas,shared/K4-ArenaSharedApi}
 	return 0
 }
 
@@ -181,10 +162,11 @@ CounterStrikeSharpHelper::installBoelkStatus () {
 		mkdir -p PugSharp/Config
 		cp "$CSS_PUGSHARP_MATCH_CONFIG" "PugSharp/Config/$pugsharpFile"
 	fi
+	# mp_autokick 0 on every server type: nobody is ever kicked or banned for team kills / team damage
 	jq -n \
 		--arg url "$CSS_BOELK_STATUS_URL" \
 		--argjson admin "$([[ $CSS_BOELK_EVERYONE_ADMIN ]] && echo true || echo false)" \
-		--arg commands "$CSS_BOELK_MAP_COMMANDS" \
+		--arg commands "mp_autokick 0; $CSS_BOELK_MAP_COMMANDS" \
 		--arg pugsharp "$pugsharpFile" \
 		'{Url: $url, EveryoneAdmin: $admin, MapStartCommands: $commands, PugSharpConfigFile: $pugsharp, ConfigVersion: 1}' \
 		> addons/counterstrikesharp/configs/plugins/BoelkStatus/BoelkStatus.json
