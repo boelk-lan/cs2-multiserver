@@ -1,0 +1,196 @@
+diff --git a/PugSharp.Config/MatchConfig.cs b/PugSharp.Config/MatchConfig.cs
+index 2298a2b..fa7146e 100644
+--- a/PugSharp.Config/MatchConfig.cs
++++ b/PugSharp.Config/MatchConfig.cs
+@@ -52,6 +52,10 @@ public class MatchConfig
+     [JsonPropertyName("team_mode")]
+     public TeamMode TeamMode { get; set; }
+ 
++    // boelk-lan: knife round instead of team 1 picking the side; the knife round winner picks it
++    [JsonPropertyName("knife_round")]
++    public bool KnifeRound { get; set; }
++
+     [JsonPropertyName("cvars")]
+     public IDictionary<string, string> CVars { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
+ 
+diff --git a/PugSharp.Match.Tests/MatchTests.cs b/PugSharp.Match.Tests/MatchTests.cs
+index da66192..46f67b6 100644
+--- a/PugSharp.Match.Tests/MatchTests.cs
++++ b/PugSharp.Match.Tests/MatchTests.cs
+@@ -131,6 +131,44 @@ public class MatchTests
+     }
+ 
+ 
++    [Fact]
++    public void MatchTestWithKnifeRound()
++    {
++        MatchConfig config = CreateExampleConfig(new List<string> { "de_dust2" });
++        config.KnifeRound = true;
++        var serviceProvider = CreateTestProvider();
++
++        var matchPlayers = new List<IPlayer>();
++        var csServer = serviceProvider.GetRequiredService<ICsServer>();
++        csServer.LoadAllPlayers().Returns(matchPlayers);
++
++        var match = serviceProvider.GetRequiredService<MatchFactory>().CreateMatch(config);
++
++        IPlayer player1 = CreatePlayerSub(0, 0); // Team1, starts as T
++        IPlayer player2 = CreatePlayerSub(1, 1); // Team2, starts as CT
++
++        ConnectPlayers(matchPlayers, match, player1, player2);
++        SetPlayersReady(match, player1, player2, MatchState.TeamVote);
++        csServer.Received().EndWarmup();
++
++        // No side vote while the knife round runs, round ends before its freeze time ended don't count
++        Assert.False(match.VoteTeam(player1, "T"));
++        Assert.False(match.KnifeRoundLive);
++        Assert.False(match.CompleteKnifeRound(Contract.Team.Terrorist));
++
++        // A draw restarts the knife round
++        match.KnifeRoundFreezeEnded();
++        Assert.True(match.KnifeRoundLive);
++        Assert.False(match.CompleteKnifeRound(Contract.Team.None));
++        Assert.False(match.KnifeRoundLive);
++
++        // CT (Team2) wins: only Team2 picks the side
++        match.KnifeRoundFreezeEnded();
++        Assert.True(match.CompleteKnifeRound(Contract.Team.CounterTerrorist));
++        Assert.Equal(MatchState.TeamVote, match.CurrentState);
++        VoteTeam(csServer, config, match, player1, player2, player2);
++    }
++
+     private static void PauseUnpauseMatch(ICsServer csServer, Match match, IPlayer player1)
+     {
+         match.SetPlayerDisconnected(player1);
+diff --git a/PugSharp.Match/Match.cs b/PugSharp.Match/Match.cs
+index 9d24e3e..8967512 100644
+--- a/PugSharp.Match/Match.cs
++++ b/PugSharp.Match/Match.cs
+@@ -41,8 +41,13 @@ public class Match : IDisposable
+     private readonly ICssDispatcher _Dispatcher;
+     private List<Vote> _MapsToSelect = new List<Vote>();
+     private MatchTeam? _CurrentMatchTeamToVote;
++    private KnifeRoundState _KnifeRound;
+     private bool _DisposedValue;
+ 
++    // boelk-lan knife round. Starting: waiting for its freeze time to end - round_end events from
++    // ending the warmup / restarting the game don't count. Live: the next round_end decides.
++    private enum KnifeRoundState { None, Starting, Live }
++
+     public MatchState CurrentState => _MatchStateMachine.State;
+ 
+     public MatchInfo MatchInfo { get; private set; }
+@@ -807,8 +812,71 @@ public class Match : IDisposable
+ 
+     private void SendTeamVoteToVotingTeam()
+     {
++        if (MatchInfo.Config.KnifeRound)
++        {
++            StartKnifeRound();
++            return;
++        }
++
+         SwitchVotingTeam();
++        ShowTeamVote();
++    }
++
++    private void StartKnifeRound()
++    {
++        // Scrambled players are only moved to their team's side on the map switch - do it now
++        foreach (var team in new[] { MatchInfo.MatchTeam1, MatchInfo.MatchTeam2 })
++        {
++            DoForAll(team.Players.Select(x => x.Player).Where(p => p.Team != team.CurrentTeamSide), p => p.SwitchTeam(team.CurrentTeamSide));
++        }
++
++        // Knife only: no pistols, bomb, money or map weapons. live.cfg sets all of these again.
++        _CsServer.ExecuteCommand("mp_ct_default_secondary \"\"; mp_t_default_secondary \"\"; mp_give_player_c4 0; mp_startmoney 0; mp_maxmoney 0; mp_buytime 0; mp_weapons_allow_map_placed 0; mp_free_armor 1; mp_freezetime 5; mp_roundtime 1.92; mp_roundtime_defuse 1.92");
++        _CsServer.EndWarmup();
++        _CsServer.RestartGame();
++        _KnifeRound = KnifeRoundState.Starting;
++        _CsServer.PrintToChatAll("Knife round! The winning team chooses its side.");
++    }
+ 
++    public bool KnifeRoundLive => CurrentState == MatchState.TeamVote && _KnifeRound == KnifeRoundState.Live;
++
++    // Called on round_freeze_end
++    public void KnifeRoundFreezeEnded()
++    {
++        if (_KnifeRound == KnifeRoundState.Starting)
++        {
++            _KnifeRound = KnifeRoundState.Live;
++        }
++    }
++
++    // Called on round_end with the winning side. Returns true if this ended the knife round.
++    public bool CompleteKnifeRound(Team winner)
++    {
++        if (CurrentState != MatchState.TeamVote || _KnifeRound != KnifeRoundState.Live)
++        {
++            return false;
++        }
++
++        if (winner != Team.Terrorist && winner != Team.CounterTerrorist)
++        {
++            _CsServer.PrintToChatAll("Knife round draw - again!");
++            _CsServer.RestartGame();
++            _KnifeRound = KnifeRoundState.Starting;
++            return false;
++        }
++
++        _KnifeRound = KnifeRoundState.None;
++        _CsServer.ExecuteCommand("mp_ct_default_secondary weapon_hkp2000; mp_t_default_secondary weapon_glock; mp_give_player_c4 1; mp_weapons_allow_map_placed 1; mp_free_armor 0");
++        _CsServer.LoadAndExecuteConfig("warmup.cfg");
++
++        _CurrentMatchTeamToVote = GetMatchTeam(winner);
++        _CsServer.PrintToChatAll($"{_CurrentMatchTeamToVote!.TeamConfig.Name} won the knife round and chooses the side (menu, !stay or !switch).");
++        ShowTeamVote();
++        return true;
++    }
++
++    private void ShowTeamVote()
++    {
+         var mapOptions = new List<MenuOption>()
+         {
+             new("T", (opt, player) => VoteTeam(player, "T")),
+@@ -1251,8 +1319,8 @@ public class Match : IDisposable
+ 
+     public bool VoteTeam(IPlayer player, string teamName)
+     {
+-        // Not in correct state
+-        if (CurrentState != MatchState.TeamVote)
++        // Not in correct state (or the knife round that decides who votes is still running)
++        if (CurrentState != MatchState.TeamVote || _KnifeRound != KnifeRoundState.None)
+         {
+             player.PrintToChat(_TextHelper.GetText(nameof(Resources.PugSharp_Match_Error_NoTeamVoteExpected)));
+             return false;
+diff --git a/PugSharp/Application.cs b/PugSharp/Application.cs
+index 35bcf69..9a43a61 100644
+--- a/PugSharp/Application.cs
++++ b/PugSharp/Application.cs
+@@ -135,6 +135,11 @@ public class Application : IApplication
+         _Plugin.RegisterEventHandler<EventRoundStart>(OnRoundStart);
+         _Plugin.RegisterEventHandler<EventRoundEnd>(OnRoundEnd, HookMode.Pre);
+         _Plugin.RegisterEventHandler<EventRoundMvp>(OnRoundMvp);
++        _Plugin.RegisterEventHandler<EventRoundFreezeEnd>((_, _) =>
++        {
++            _Match?.KnifeRoundFreezeEnded();
++            return HookResult.Continue;
++        });
+ 
+         _Plugin.RegisterEventHandler<EventServerCvar>(OnCvarChanged, HookMode.Pre);
+ 
+@@ -392,6 +397,14 @@ public class Application : IApplication
+             return HookResult.Continue;
+         }
+ 
++        if (_Match.KnifeRoundLive)
++        {
++            // boelk-lan knife round: decide a moment later, so the round end itself goes through first
++            var winner = (Match.Contract.Team)eventRoundEnd.Winner;
++            _Plugin.AddTimer(3.0f, () => _Match?.CompleteKnifeRound(winner));
++            return HookResult.Continue;
++        }
++
+         if (_Match.CurrentState == MatchState.None)
+         {
+             return HookResult.Continue;

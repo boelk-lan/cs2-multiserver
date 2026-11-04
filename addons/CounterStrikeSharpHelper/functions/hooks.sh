@@ -91,16 +91,41 @@ CounterStrikeSharpHelper::installCounterStrikeSharp () {
 # plugin for running pug/matchmaking-style servers. Uses the plain
 # "PugSharp_linux_*" release asset (not the "with_cssharp"-bundled ones),
 # since CounterStrikeSharp is already installed by this addon separately.
+#
+# Pinned to PUGSHARP_VERSION: PugSharp's own DLLs are then replaced by a build of the same
+# version's source with PugSharp/knife-round.patch applied (match config "knife_round": true -
+# a knife round instead of team 1 picking the side). Needs dotnet (like BoelkStatus) and git
+# (for git apply). If that build fails, the stock release runs, without knife round.
+# To update PugSharp: bump the version and make the patch apply to its source again.
+PUGSHARP_VERSION=v0.1.19-beta
 CounterStrikeSharpHelper::installPugSharp () {
 	[[ $CSS_PUGSHARP ]] || return 0
-	echo "Fetching latest PugSharp (Linux) build ..."
-	local url
-	url="$(CounterStrikeSharpHelper::latestAssetUrl Lan2Play/PugSharp '^PugSharp_linux_[0-9].*\.zip$')"
-	[[ $url ]] || {
-		error <<< "Could not find a PugSharp Linux release on GitHub."
+	echo "Fetching PugSharp $PUGSHARP_VERSION (Linux) build ..."
+	CounterStrikeSharpHelper::unpackZip \
+		"https://github.com/Lan2Play/PugSharp/releases/download/$PUGSHARP_VERSION/PugSharp_linux_${PUGSHARP_VERSION#v}.zip" || {
+		error <<< "Could not download PugSharp $PUGSHARP_VERSION from GitHub."
 		return 1
 	}
-	CounterStrikeSharpHelper::unpackZip "$url"
+
+	local dotnet="${DOTNET:-$(command -v dotnet || echo "$HOME/.dotnet/dotnet")}"
+	local patch="$THIS_DIR/addons/CounterStrikeSharpHelper/PugSharp/knife-round.patch"
+	local out="$CSS_HOME/pugsharp-build"
+	# Built once per version + patch, not on every start
+	if ! cmp -s "$patch" "$out/$PUGSHARP_VERSION.patch"; then
+		echo "Building PugSharp $PUGSHARP_VERSION with knife round patch ..."
+		local src="$CSS_HOME/pugsharp-src" tarball
+		tarball="$(CounterStrikeSharpHelper::downloadFile "https://github.com/Lan2Play/PugSharp/archive/refs/tags/$PUGSHARP_VERSION.tar.gz")"
+		rm -rf "$src" "$out" && mkdir -p "$src" &&
+			tar xzf "$tarball" -C "$src" --strip-components=1 &&
+			git -C "$src" apply "$patch" &&
+			"$dotnet" build "$src/PugSharp/PugSharp.csproj" -c Release -o "$out" --nologo -v quiet >/dev/null &&
+			cp "$patch" "$out/$PUGSHARP_VERSION.patch" || {
+			warning <<< "Could not build the patched PugSharp - running the stock release, without knife round."
+			rm -rf "$out"
+			return 0
+		}
+	fi
+	cp "$out"/PugSharp*.dll addons/counterstrikesharp/plugins/PugSharp/
 }
 
 # Set CSS_BOELK_ARENA_URL (alongside CSS_ENABLE=1) to build and install the BoelkArena plugin

@@ -51,7 +51,10 @@ exact GitHub release tag.
    `~/msm.d/cs2/cfg/inst-<name>/server.conf`. Instances without this set are
    left untouched (same convention as `SM_PLUGINS` in `SourcemodHelper`).
 3. Optionally also set `CSS_PUGSHARP=1` in the same file to install PugSharp
-   on top.
+   on top. It is pinned to `PUGSHARP_VERSION` (`functions/hooks.sh`) and its own
+   DLLs are rebuilt from source with `PugSharp/knife-round.patch` (match config
+   `"knife_round": true`: a knife round decides which team picks its side).
+   Needs `dotnet` and `git`; if the build fails, the stock release runs.
 4. Start (or restart) the instance. Check the launch log for this addon's
    output, then in the in-game console (`cs2-server @<name> console`) run
    `meta list` to confirm Metamod and CounterStrikeSharp both loaded (and
